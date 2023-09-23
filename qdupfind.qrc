@@ -1,4 +1,14 @@
 <RCC>
-    <qresource prefix="QDupFind">
+    <qresource prefix="/QDupFind">
+        <file alias="pause">resources/media-pause-32.png</file>
+        <file alias="refresh">resources/refresh-32.png</file>
+        <file alias="run">resources/right-128.png</file>
+        <file alias="ok">resources/standardbutton-apply-128.png</file>
+        <file alias="cancel">resources/standardbutton-cancel-128.png</file>
+        <file alias="search">resources/filecontents-128.png</file>
+        <file alias="ok2">resources/ok2.png</file>
+        <file alias="noYes">resources/cancel-ok.png</file>
+        <file alias="yesNo">resources/ok-remove.png</file>
+        <file alias="update">resources/update.png</file>
     </qresource>
 </RCC>
