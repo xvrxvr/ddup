@@ -8,6 +8,7 @@
 #include <QFileInfo>
 #include <QFile>
 #include <QGuiApplication>
+#include <QMultiHash>
 
 struct WaitCursor {
     WaitCursor() { QGuiApplication::setOverrideCursor(QCursor(Qt::WaitCursor)); }

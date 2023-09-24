@@ -9,8 +9,8 @@ QDupFind::QDupFind(QWidget *parent)
 {
     ui.setupUi(this);
 
-    ui.errors->hide();
-    ui.priority_spin->setDisabled(true);
+    ui.errors_box->hide();
+//    ui.files_box->hide();
 
     scanner = new ScanThread(this);
 
@@ -19,9 +19,9 @@ QDupFind::QDupFind(QWidget *parent)
     connect(scanner, &ScanThread::stat_update, this, &QDupFind::scan_stat_update, Qt::QueuedConnection);
     connect(scanner, &ScanThread::error, this, &QDupFind::scan_error, Qt::QueuedConnection);
 
-    new QShortcut(Qt::Key_Space, ui.files, [this]() {on_btn_invert_pressed();}, Qt::WidgetShortcut);
-    new QShortcut(Qt::Key_Delete, ui.files, [this]() {on_btn_remove_pressed();}, Qt::WidgetShortcut);
-    new QShortcut(Qt::Key_Insert, ui.files, [this]() {on_btn_keep_me_pressed();}, Qt::WidgetShortcut);
+//    new QShortcut(Qt::Key_Space, ui.files, [this]() {on_btn_invert_pressed();}, Qt::WidgetShortcut);
+//    new QShortcut(Qt::Key_Delete, ui.files, [this]() {on_btn_remove_pressed();}, Qt::WidgetShortcut);
+//    new QShortcut(Qt::Key_Insert, ui.files, [this]() {on_btn_keep_me_pressed();}, Qt::WidgetShortcut);
 
     progress_bar = new QProgressBar();
     progress_bar->hide();
@@ -38,7 +38,7 @@ QDupFind::~QDupFind()
 void QDupFind::add_error(QString msg)
 {
     ui.errors->append(msg);
-    ui.errors->show();
+    ui.errors_box->show();
 }
 
 void QDupFind::sb_message(QString msg)
@@ -68,122 +68,49 @@ void QDupFind::on_actionAdd_directory_triggered(bool)
     if (!dir.isEmpty()) scanner->scan_dir(dir);
 }
 
-QString DirTreeNode::get_visual_name(int parent_priority, QString raw_name)
+static QTreeWidgetItem* find_in_children(QTreeWidgetItem* root, QString text)
 {
-    if (children.isEmpty()) return raw_name; // This is File - no priority marks on Files
-    if (priority != -1) return QString("=%1 %2").arg(priority).arg(raw_name);
-    if (parent_priority != -1) return QString("[%1] %2").arg(parent_priority).arg(raw_name);
-    return raw_name;
+    for (int i = 0; i < root->childCount(); ++i)
+    {
+        auto child = root->child(i);
+        if (child->text(0) == text) return child;
+    }
+    return NULL;
 }
 
-std::pair<DirTreeNode*, int> QDupFind::add_dir(QStringList path, int trim, bool set_icons)
+QTreeWidgetItem* QDupFind::add_dir(QString path)
 {
-    DirTreeNode* root = &dir_tree_root;
-    int priority = dir_tree_root.priority;
-    size_t max = path.size() - trim;
-    for (size_t i=0; i<max; ++i)
+    QTreeWidgetItem* root = ui.dirs->invisibleRootItem();
+    auto path_list = path.split("/", Qt::SkipEmptyParts);
+    size_t idx = 0;
+    for(const auto& ent: path_list)
     {
-        const auto& tok = path[i];
-        if (!root->children.contains(tok))
+        QTreeWidgetItem* item = find_in_children(root, ent);
+        if (!item)
         {
-            auto iter = root->children.insert(tok, {});
-            auto item = new QTreeWidgetItem(QStringList(iter->get_visual_name(priority, tok)));
-            item->setData(0, Qt::UserRole, tok);
-            if (set_icons) item->setIcon(0, style()->standardIcon(i+1 == max ? QStyle::SP_FileIcon : QStyle::SP_DirIcon));
-            iter->item = item;
-            if (iter == root->children.begin()) // Insert at top
-            {
-                if (!root->item) // top level
-                {
-                    ui.dirs->insertTopLevelItem(0, item);
-                }
-                else
-                {
-                    root->item->insertChild(0, item);
-                }
-            }
-            else // insert after some other item
-            {
-                auto prev = iter;
-                --prev;
-                if (!root->item) // top level
-                {
-                    ui.dirs->insertTopLevelItem(ui.dirs->indexOfTopLevelItem(prev->item)+1, item);
-                }
-                else
-                {
-                    root->item->insertChild(root->item->indexOfChild(prev->item)+1, item);
-                }
-            }
+            item = new QTreeWidgetItem(QStringList(ent));
+            item->setIcon(0, style()->standardIcon(idx + 1 == path_list.size() ? QStyle::SP_FileIcon : QStyle::SP_DirIcon));
+            root->insertChild(0, item);
         }
-        root = &root->children[tok];
-        if (root->priority != -1) priority = root->priority;
+        root = item;
+        ++idx;
     }
-    return {root, priority};
+    return root;
 }
 
 void QDupFind::scan_new_dup(QString fname, QByteArray hash)
 {
-   add_dir(fname);
-   dups_backrefs[fname] = hash;
+   auto wg = add_dir(fname);
 
-   if (!dups_hash_toc.contains(hash)) // New File entry
-   {
-        QString file_name = QFileInfo(fname).fileName();
-        QString first_entry_key = QString("%1 %2").arg(file_name).arg(hash.toHex());
-        dups_hash_toc[hash] = first_entry_key;
-
-        FileNode fn;
-        fn.file_name = file_name;
-        fn.item = new QTreeWidgetItem(QStringList(file_name));
-        fn.item->setIcon(0, style()->standardIcon(QStyle::SP_FileIcon));
-        auto iter = dups_visual.insert(first_entry_key, fn);
-        if (iter == dups_visual.begin()) ui.files->insertTopLevelItem(0, fn.item); else
-        {
-            auto prev = iter;
-            --prev;
-            ui.files->insertTopLevelItem(ui.files->indexOfTopLevelItem(prev->item)+1, fn.item);
-        }
-        iter->add_dir_node(fname, ui.files);
-   }
-   else
-   {
-       dups_visual[dups_hash_toc[hash]].add_dir_node(fname, ui.files);
-   }
+   auto ptr = all_files.insert(fname, FileInfo{
+        .hash = hash,
+        .file_mode = FNM_None,
+        .item = wg
+   });
+   files_by_hash.insert(hash, ptr);
 }
 
-void FileNode::add_dir_node(QString fname, QTreeWidget* wg)
-{
-    QFileInfo fi(fname);
-    if (!mixed_file_names && file_name != fi.fileName()) to_mixed_file_name();
-    QString dir_entry_name = mixed_file_names ? fname : fi.path();
-    auto wg_item = new QTreeWidgetItem(QStringList(dir_entry_name));
-    wg_item->setData(0, Qt::UserRole, fname);
-    auto iter = dirs.insert(fname, DirNode{ wg_item});
-    if (iter == dirs.begin()) item->insertChild(0, wg_item); else
-    {
-        auto prev = iter; --prev;
-        item->insertChild(item->indexOfChild(prev->item)+1, wg_item);
-    }
-    if (mixed_file_names) update_file_name_in_widget();
-}
-
-void FileNode::to_mixed_file_name()
-{
-    mixed_file_names = true;
-    update_file_name_in_widget();
-    for(auto ent: dirs.asKeyValueRange()) ent.second.item->setText(0, ent.first);
-}
-
-void FileNode::update_file_name_in_widget()
-{
-    QSet<QString> acc;
-    for(auto ent : dirs.asKeyValueRange()) acc.insert(QFileInfo(ent.first).fileName());
-    QStringList acc2(acc.begin(), acc.end());
-    acc2.sort();
-    item->setText(0, acc2.join(" | "));
-}
-
+#if 0
 void FileNode::set_file_mode(QString fname, FileNodeMode mode)
 {
     assert(dirs.contains(fname));
@@ -223,7 +150,6 @@ FileNode::FilledContents FileNode::check_filled() const
     return res[filled];
 }
 
-
 void QDupFind::set_file_mode(std::function<int(int)> mode_functor)
 {
     auto path = ui.files->currentItem()->data(0, Qt::UserRole).toString();
@@ -246,91 +172,44 @@ void QDupFind::set_file_mode_all(FileNodeMode new_mode)
         if (!ent.second.entry_mode) fnode->set_file_mode(ent.first, new_mode);
     }
 }
-
-void QDupFind::move_to_next_file()
-{
-    auto parent = ui.files->currentItem()->parent();
-    if (!parent) return;
-    int idx = ui.files->indexOfTopLevelItem(parent);
-    if (ui.files->topLevelItemCount() <= idx) return;
-    auto next_parent = ui.files->topLevelItem(idx+1);
-    next_parent->setExpanded(true);
-    ui.files->setCurrentItem(next_parent->child(0));
-}
+#endif
 
 QString QDupFind::tree_item_to_path(QTreeWidgetItem* item)
 {
     QStringList acc;
     while (item)
     {
-        acc << item->data(0, Qt::UserRole).toString();
+        acc << item->text(0);
         item = item->parent();
     }
     std::reverse(acc.begin(), acc.end());
     return acc.join("/");
 }
 
-FileNode* QDupFind::path_to_fnode(QString path)
-{
-    if (!dups_backrefs.contains(path)) return NULL;
-    auto & p1 = dups_backrefs[path];
-    assert(dups_hash_toc.contains(p1));
-    auto & p2 = dups_hash_toc[p1];
-    assert(dups_visual.contains(p2));
-    return &dups_visual[p2];
-}
-
-void QDupFind::on_dirs_itemDoubleClicked(QTreeWidgetItem* item, int column)
-{
-    auto path = tree_item_to_path(item);
-    const FileNode* fnode = path_to_fnode(path);
-    if (!fnode) return;
-    auto wg_item = fnode->dirs[path].item;
-    if (auto p = wg_item->parent()) p->setExpanded(true);
-    ui.files->setCurrentItem(wg_item);
-    ui.tabWidget->setCurrentIndex(1);
-}
-
-void QDupFind::on_files_itemDoubleClicked(QTreeWidgetItem* item, int column)
-{
-    auto fname = item->data(0, Qt::UserRole).toString();
-    if (fname.isEmpty()) return;
-    auto wg_item = add_dir(fname).first->item;
-    if (auto p = wg_item->parent()) p->setExpanded(true);
-    ui.dirs->setCurrentItem(wg_item);
-    ui.tabWidget->setCurrentIndex(0);
-}
-
 void QDupFind::on_dirs_currentItemChanged(QTreeWidgetItem* current, QTreeWidgetItem*)
 {
+    ui.files->clear();
     auto path = tree_item_to_path(current);
-    ui.dir_to_process->setText(path);
-    if (!current->childCount()) { cur_dir_selected = ""; ui.priority_spin->setDisabled(true); return;}
-    cur_dir_selected = path; 
-    ui.priority_spin->setDisabled(false);
-    int priority = add_dir(cur_dir_selected).second;
-    suppress_new_prio_value = true;
-    ui.priority_spin->setValue(priority == -1 ? 500 : priority);
-    suppress_new_prio_value = false;
+    auto org_ptr = all_files.find(path);
+    if (org_ptr == all_files.end()) return;
+    auto range = files_by_hash.equal_range(org_ptr->hash);
+    for (auto iter = range.first; iter != range.second; ++iter)
+    {
+        auto wg = new QListWidgetItem(/*icon, */iter->key(), ui.files);
+        if (*iter == org_ptr) wg->setSelected(true);
+    }
 }
 
-void QDupFind::on_priority_spin_valueChanged(int priority)
+void QDupFind::on_files_currentItemChanged(QListWidgetItem* current, QListWidgetItem* previous)
 {
-    if (suppress_new_prio_value || cur_dir_selected.isEmpty()) return;
-    auto item = add_dir(cur_dir_selected).first;
-    if (item->priority == priority) return;
-    item->priority = priority;
-    item->update_visual_widget(-1);
+    if (!current) return;
+    auto path = current->text();
+    if (!all_files.contains(path)) return;
+    ui.dirs->setCurrentItem(all_files[path].item);
 }
 
-void DirTreeNode::update_visual_widget(int parent_priority)
-{
-    auto visual = get_visual_name(parent_priority, item->data(0, Qt::UserRole).toString());
-    item->setText(0, visual);
-    int pp = priority != -1 ? priority : parent_priority;
-    for(auto& ent: children) ent.update_visual_widget(pp);
-}
 
+/*
 void QDupFind::on_btn_auto_pressed()
 {
     WaitCursor wc;
@@ -415,8 +294,10 @@ bool QDupFind::remove_from_dir_tree(const QStringList& file_name, int index, Dir
     root.children.remove(file_name[index]);
     return root.children.isEmpty();
 }
+*/
 
 bool QDupFind::do_delete(QString fname)
 {
+    //!!! Add removing empty dirs !!!
     return QDir().remove(fname);
 }
