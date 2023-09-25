@@ -119,19 +119,18 @@ bool ScanThread::try_file_full(QString file, const void* file_image, size_t file
     return result;
 }
 
-void ScanThread::suspend_resume(QCheckBox* cb, int state)
+void ScanThread::suspend_resume(QAction* action, bool checked)
 {
-    switch (state)
+    if (checked)
     {
-        case Qt::Checked:
-        {
-            expect_suspend = true;
-            cb->setDisabled(true);
-            suspend_cb = cb;
-            suspend_watcher.setFuture(QtConcurrent::run([this, cb]() {suspend_mutex.lock();}));
-            break;
-        }
-        case Qt::Unchecked: expect_suspend = false; suspend_mutex.unlock(); break;
-        default: break;
+        expect_suspend = true;
+        action->setDisabled(true);
+        suspend_action = action;
+        suspend_watcher.setFuture(QtConcurrent::run([this]() {suspend_mutex.lock();}));
+    }
+    else
+    {
+        expect_suspend = false; 
+        suspend_mutex.unlock();
     }
 }

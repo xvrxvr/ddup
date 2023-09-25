@@ -104,7 +104,7 @@ class ScanThread : public QThread {
 
     // Handle bg 'suspend' request
     QFutureWatcher<void> suspend_watcher;
-    QCheckBox* suspend_cb = NULL;
+    QAction* suspend_action = NULL;
 
     virtual void run() override
     {
@@ -141,7 +141,7 @@ class ScanThread : public QThread {
 public:
     ScanThread(QObject* parent) : QThread(parent) 
     {
-        QObject::connect(&suspend_watcher, &QFutureWatcher<void>::finished, this, [this]() {suspend_cb->setDisabled(false);});
+        QObject::connect(&suspend_watcher, &QFutureWatcher<void>::finished, this, [this]() {suspend_action->setDisabled(false);});
     }
 
     void scan_dir(QString d) 
@@ -155,7 +155,7 @@ public:
     void reset_reported() {queue.push(Cmd{CC_ResetReported});}
     void remove_file(QString file, QByteArray hash) {queue.push(Cmd{ CC_RemoveFile, file, hash});}
 
-    void suspend_resume(QCheckBox*, int state);
+    void suspend_resume(QAction*, bool checked);
 
 signals:
     void new_dup(QString fname, QByteArray hash);

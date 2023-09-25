@@ -35,6 +35,41 @@ QDupFind::~QDupFind()
     scanner->terminate();
 }
 
+QIcon QDupFind::get_icon(FileNodeModes mode)
+{
+    FileNodeModes normilized = FNM_None;
+    if (mode & FNM_Keep) normilized = FNM_Keep; else
+    if (mode & FNM_Delete) normilized = FNM_Delete;
+    if (mode & FNM_AddFileIcon) normilized |= FNM_AddFileIcon;
+
+    if (!normilized) return {};
+
+    if (icons.contains(normilized)) return icons[normilized];
+
+    QIcon result;
+    if (normilized & FNM_Keep) result = style()->standardIcon(QStyle::SP_DialogApplyButton); else
+    if (normilized & FNM_Delete) result = style()->standardIcon(QStyle::SP_DialogCancelButton); else
+    if (normilized & FNM_AddFileIcon) result = style()->standardIcon(QStyle::SP_FileIcon);
+/*
+    if ((normilized & FNM_AddFileIcon) && normilized != FNM_AddFileIcon)
+    {
+        QIcon file_icon = style()->standardIcon(QStyle::SP_FileIcon);
+        QIcon new_icon;
+
+        QPixmap result_pixmap(128*2 + 5, 128);
+        QPainter painter(&result_pixmap);
+        file_icon.paint(&painter, 0, 0, 128, 128);
+        result.paint(&painter, 128+5, 0, 128, 128);
+        new_icon.addPixmap(result_pixmap);
+
+        result = new_icon;
+    }
+*/
+    icons[normilized] = result;
+    return result;
+}
+
+
 void QDupFind::add_error(QString msg)
 {
     ui.errors->append(msg);
@@ -89,7 +124,8 @@ QTreeWidgetItem* QDupFind::add_dir(QString path)
         if (!item)
         {
             item = new QTreeWidgetItem(QStringList(ent));
-            item->setIcon(0, style()->standardIcon(idx + 1 == path_list.size() ? QStyle::SP_FileIcon : QStyle::SP_DirIcon));
+            if (idx + 1 != path_list.size()) item->setIcon(0, style()->standardIcon(QStyle::SP_DirIcon)); 
+            else item->setIcon(0, get_icon(all_files[path].file_mode | FNM_AddFileIcon));
             root->insertChild(0, item);
         }
         root = item;
@@ -110,69 +146,144 @@ void QDupFind::scan_new_dup(QString fname, QByteArray hash)
    files_by_hash.insert(hash, ptr);
 }
 
-#if 0
-void FileNode::set_file_mode(QString fname, FileNodeMode mode)
+void QDupFind::set_file_mode(QString fname, FileNodeModes mode)
 {
-    assert(dirs.contains(fname));
-    auto org_fill = check_filled();
-    auto& ent = dirs[fname];
-    if (mode & FNM_Hide) ent.entry_mode |= FNM_Hide;
-    else ent.entry_mode = mode;
-    if (ent.entry_mode & FNM_Hide) ent.item->setHidden(true); else
-    if (ent.entry_mode& FNM_Keep) ent.item->setIcon(0, ent.item->treeWidget()->style()->standardIcon(QStyle::SP_DialogApplyButton)); else
-    if (ent.entry_mode & FNM_Delete) ent.item->setIcon(0, ent.item->treeWidget()->style()->standardIcon(QStyle::SP_DialogCancelButton)); 
-    else ent.item->setIcon(0, {});
-    auto now_fill = check_filled();
-    if (org_fill != now_fill)
+    assert(all_files.contains(fname));
+    auto& ent = all_files[fname];
+
+    if (ent.file_mode & FNM_Hide) return;
+
+    ent.file_mode = mode;
+    ent.item->setIcon(0, get_icon(ent.file_mode | FNM_AddFileIcon));
+
+    int idx=0;
+    while(auto wg = ui.files->item(idx++))
     {
-        static const QStyle::StandardPixmap pxm[] = {QStyle::SP_FileIcon, QStyle::SP_FileLinkIcon, QStyle::SP_FileDialogContentsView};
-        item->setIcon(0, ent.item->treeWidget()->style()->standardIcon(pxm[now_fill]));
-    }
-
-    if (!(mode & FNM_Hide)) return;
-
-    for (const auto& ent : dirs)
-    {
-        if (!(ent.entry_mode & FNM_Hide)) return;
-    }
-    item->setHidden(true);
-}
-
-FileNode::FilledContents FileNode::check_filled() const
-{
-    int filled = 0;
-    for (const auto& d : dirs)
-    {
-        if (d.entry_mode & FNM_Hide) continue;
-        filled |= d.entry_mode ? 1 : 2;
-    }
-    static const FilledContents res[] = { FC_None, FC_All, FC_None, FC_Some };
-    return res[filled];
-}
-
-void QDupFind::set_file_mode(std::function<int(int)> mode_functor)
-{
-    auto path = ui.files->currentItem()->data(0, Qt::UserRole).toString();
-    if (path.isEmpty()) return;
-    FileNode* fnode = path_to_fnode(path);
-    if (!fnode) return;
-    auto& ent = fnode->dirs[path];
-    if (ent.entry_mode & FNM_Hide) return;
-    fnode->set_file_mode(path, FileNodeMode(mode_functor(ent.entry_mode)));
-}
-
-void QDupFind::set_file_mode_all(FileNodeMode new_mode)
-{
-    auto path = ui.files->currentItem()->data(0, Qt::UserRole).toString();
-    if (path.isEmpty()) return;
-    FileNode* fnode = path_to_fnode(path);
-    if (!fnode) return;
-    for (const auto& ent : fnode->dirs.asKeyValueRange())
-    {
-        if (!ent.second.entry_mode) fnode->set_file_mode(ent.first, new_mode);
+        if (wg->text() == fname)
+        {
+            wg->setIcon(get_icon(ent.file_mode));
+            break;
+        }
     }
 }
-#endif
+
+void QDupFind::hide_file(QString fname)
+{
+    assert(all_files.contains(fname));
+    auto& ent = all_files[fname];
+
+    ent.file_mode |= FNM_Hide;
+    if (ui.actionShow_processed_entries->isChecked()) return;
+
+    hide_dir_item(ent.item);
+}
+
+void QDupFind::hide_dir_item(QTreeWidgetItem* root)
+{
+    root->setHidden(true);
+    root = root->parent();
+    for (;root; root = root->parent())
+    {
+        for(int ch_idx=0; ch_idx < root->childCount(); ++ch_idx)
+        {
+            if (!root->child(ch_idx)->isHidden()) return;
+        }
+        root->setHidden(true);
+    }
+}
+
+void QDupFind::hide_dir_tree()
+{
+    for(const auto& ent: all_files)
+    {
+        if (ent.file_mode & FNM_Hide) hide_dir_item(ent.item);
+    }
+}
+
+void QDupFind::show_dir_tree()
+{
+    for (const auto& ent : all_files)
+    {
+        if (ent.file_mode & FNM_Hide)
+        {
+            for(auto root = ent.item; root; root=root->parent())
+            {
+                if (!root->isHidden()) break;
+                root->setHidden(false);
+            }
+        }
+    }
+}
+
+void QDupFind::set_file_mode_all(QByteArray hash, FileNodeModes new_mode)
+{
+    auto range = files_by_hash.equal_range(hash);
+    for(auto iter=range.first; iter!=range.second; ++iter)
+    {
+        if (!iter.value()->file_mode) set_file_mode(iter->key(), new_mode);
+    }
+}
+
+QString QDupFind::get_current_file_name()
+{
+    QString file;
+    if (ui.dirs->hasFocus()) file = tree_item_to_path(ui.dirs->currentItem()); else
+    if (ui.files->hasFocus()) 
+    {
+        if (auto p = ui.files->currentItem()) file = p->text(); else
+        if (auto p = ui.files->selectedItems(); !p.isEmpty()) file = p[0]->text();
+        else return {};
+    }
+    else return {};
+    if (!all_files.contains(file)) return {};
+    return file;
+}
+
+void QDupFind::set_current_file_mode(FileNodeModes new_mode)
+{
+    QString file = get_current_file_name();
+    if (!file.isEmpty()) set_file_mode(file, new_mode);
+}
+
+void QDupFind::on_actionKeep_me_triggered(bool)
+{
+    QString file = get_current_file_name();
+    if (file.isEmpty()) return;
+    set_file_mode(file, FNM_KeepManual);
+    set_file_mode_all(all_files[file].hash, FNM_DeleteManual);
+}
+
+void QDupFind::on_actionKeep_other_triggered(bool)
+{
+    QString file = get_current_file_name();
+    if (file.isEmpty()) return;
+    set_file_mode(file, FNM_DeleteManual);
+
+    auto range = files_by_hash.equal_range(all_files[file].hash);
+    QString fname;
+    int count = 0;
+
+    for (auto iter = range.first; iter != range.second && count < 2; ++iter)
+    {
+        if (!iter.value()->file_mode) {fname = iter.value().key(); ++count;}
+    }
+    if (count == 1) set_file_mode(fname, FNM_KeepManual);
+}
+
+void QDupFind::on_actionInvert_triggered(bool)
+{
+    QString file = get_current_file_name();
+    if (file.isEmpty()) return;
+    auto file_mode = all_files[file].file_mode;
+    
+    if (file_mode & FNM_Hide) return;
+
+    if (!file_mode) file_mode = FNM_KeepManual; else
+    if (file_mode & (FNM_Keep | FNM_KeepDup)) file_mode = FNM_DeleteManual; else
+    if (file_mode & FNM_Delete) file_mode = FNM_None;
+    
+    set_file_mode(file, file_mode);
+}
 
 QString QDupFind::tree_item_to_path(QTreeWidgetItem* item)
 {
@@ -195,7 +306,13 @@ void QDupFind::on_dirs_currentItemChanged(QTreeWidgetItem* current, QTreeWidgetI
     auto range = files_by_hash.equal_range(org_ptr->hash);
     for (auto iter = range.first; iter != range.second; ++iter)
     {
-        auto wg = new QListWidgetItem(/*icon, */iter->key(), ui.files);
+        auto file_mode = iter.value()->file_mode;
+        if (!ui.actionShow_processed_entries->isChecked())
+        {
+            if (file_mode & FNM_Hide) continue;
+        }
+        auto icon = get_icon(file_mode);
+        auto wg = new QListWidgetItem(icon, iter->key(), ui.files);
         if (*iter == org_ptr) wg->setSelected(true);
     }
 }

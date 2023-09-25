@@ -14,11 +14,15 @@ enum FileNodeMode {
     FNM_KeepAuto        = 0x02,
     FNM_Keep            = 0x03,
 
-    FNM_DeleteManual    = 0x04,
-    FNM_DeleteAuto      = 0x08,
-    FNM_Delete          = 0x0C,
+    FNM_KeepDup         = 0x04,
 
-    FNM_Hide            = 0x10
+    FNM_DeleteManual    = 0x08,
+    FNM_DeleteAuto      = 0x10,
+    FNM_Delete          = 0x18,
+
+    FNM_Hide            = 0x20,
+
+    FNM_AddFileIcon     = 0x8000    // Used internally by get_icon member, not used in FileInfo::file_mode
 };
 Q_DECLARE_FLAGS(FileNodeModes, FileNodeMode)
 Q_DECLARE_OPERATORS_FOR_FLAGS(FileNodeModes)
@@ -44,6 +48,8 @@ class QDupFind : public QMainWindow
     FilesMap all_files; // <file name> -> <file info>
     QMultiHash<QByteArray, FilePtr> files_by_hash; // <hash> -> <pointer to file in all_files>
 
+    QHash<FileNodeModes, QIcon> icons;
+
     void add_error(QString);
     void sb_message(QString);
 
@@ -51,15 +57,19 @@ class QDupFind : public QMainWindow
 
     QString tree_item_to_path(QTreeWidgetItem* item);
 
-/*
-    void set_file_mode(QString fname, FileNodeMode mode)
-    {
-        if (auto p = path_to_fnode(fname)) p->set_file_mode(fname, mode);
-    }
+    QIcon get_icon(FileNodeModes mode);
 
-    void set_file_mode(std::function<int(int)> mode_functor);
-    void set_file_mode_all(FileNodeMode new_mode);
-*/
+    void set_file_mode(QString fname, FileNodeModes mode);
+    void hide_file(QString fname);
+    void hide_dir_item(QTreeWidgetItem*);
+    void hide_dir_tree();
+    void show_dir_tree();
+
+    void set_file_mode(QString fname, std::function<int(int)> mode_functor);
+    void set_file_mode_all(QByteArray hash, FileNodeModes new_mode);
+
+    QString get_current_file_name();
+    void set_current_file_mode(FileNodeModes new_mode);
 
     bool do_delete(QString);
 
@@ -78,12 +88,22 @@ public slots:
     void scan_error(QString msg) {add_error("Dir Scanner ERROR: " + msg); }
 
     void on_actionAdd_directory_triggered(bool);
-//    void on_pause_cb_stateChanged(int state) { scanner->suspend_resume(ui.pause_cb, state);}
-
-//    void on_dirs_itemDoubleClicked(QTreeWidgetItem* item, int column);
 
     void on_dirs_currentItemChanged(QTreeWidgetItem* current, QTreeWidgetItem* previous);
     void on_files_currentItemChanged(QListWidgetItem* current, QListWidgetItem* previous);
+
+    void on_actionScan_for_Empty_dirs_triggered(bool) {}
+    void on_actionAuto_by_Dirs_triggered(bool) {}
+    void on_actionRun_triggered(bool) {}
+    void on_actionPause_triggered(bool checked) {scanner->suspend_resume(ui.actionPause, checked);}
+
+    void on_actionKeep_me_triggered(bool);
+    void on_actionKeep_other_triggered(bool);
+    void on_actionKeep_triggered(bool) { set_current_file_mode(FNM_Keep); }
+    void on_actionRemove_triggered(bool) { set_current_file_mode(FNM_Delete); }
+    void on_actionInvert_triggered(bool);
+
+
 
 /*
     void on_btn_keep_me_pressed()
@@ -92,8 +112,6 @@ public slots:
         set_file_mode_all(FNM_Delete);
         move_to_next_file();
     }
-    void on_btn_keep_pressed() { set_file_mode([](int mode) {return FNM_Keep; }); }
-    void on_btn_remove_pressed() {set_file_mode([](int mode) {return FNM_Delete; });}
     void on_btn_invert_pressed() { set_file_mode([](int mode) {return (mode + 1) % 3; }); }
 
     void on_btn_auto_pressed();
