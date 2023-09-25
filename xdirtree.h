@@ -8,6 +8,11 @@
 class XDirTree : public QTreeWidget {
     QListWidget* buddy = NULL;
 
+public:
+    using QTreeWidget::QTreeWidget;
+
+    void set_buddy(QListWidget* buddy_) {buddy = buddy_;}
+
     static QString tree_item_to_path(QTreeWidgetItem* item)
     {
         QStringList acc;
@@ -19,11 +24,6 @@ class XDirTree : public QTreeWidget {
         std::reverse(acc.begin(), acc.end());
         return acc.join("/");
     }
-
-public:
-    using QTreeWidget::QTreeWidget;
-
-    void set_buddy(QListWidget* buddy_) {buddy = buddy_;}
 
 protected:
     virtual bool dropMimeData(QTreeWidgetItem* parent, int index, const QMimeData* data, Qt::DropAction action) override {return true;}

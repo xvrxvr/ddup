@@ -54,7 +54,7 @@ class QDupFind : public QMainWindow
 
     QTreeWidgetItem* add_dir(QString path);
 
-    QString tree_item_to_path(QTreeWidgetItem* item);
+    static QString tree_item_to_path(QTreeWidgetItem* item) {return XDirTree::tree_item_to_path(item);}
 
     QIcon get_icon(FileNodeModes mode);
 
@@ -65,16 +65,12 @@ class QDupFind : public QMainWindow
     void hide_dir_tree();
     void show_dir_tree();
 
-    void set_file_mode(QString fname, std::function<int(int)> mode_functor);
     void set_file_mode_all(QByteArray hash, FileNodeModes new_mode);
 
     QString get_current_file_name();
     void set_current_file_mode(FileNodeModes new_mode);
 
     bool do_delete(QString);
-
-    // Hide TreeList entry and returns 'true' if no more items to show in parent
-//    bool remove_from_dir_tree(const QStringList& file_name, int index, DirTreeNode& root);
 
 public:
     QDupFind(QWidget *parent = nullptr);

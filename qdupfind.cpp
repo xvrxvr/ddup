@@ -307,18 +307,6 @@ void QDupFind::set_file_mode_rec(QTreeWidgetItem* root, FileNodeModes mode)
     }
 }
 
-QString QDupFind::tree_item_to_path(QTreeWidgetItem* item)
-{
-    QStringList acc;
-    while (item)
-    {
-        acc << item->text(0);
-        item = item->parent();
-    }
-    std::reverse(acc.begin(), acc.end());
-    return acc.join("/");
-}
-
 void QDupFind::on_dirs_currentItemChanged(QTreeWidgetItem* current, QTreeWidgetItem*)
 {
     ui.files->clear();
