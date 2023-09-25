@@ -105,12 +105,6 @@ public slots:
     void on_actionRemove_triggered(bool) { set_current_file_mode(FNM_Delete); }
     void on_actionInvert_triggered(bool);
 
-
-
-/*
-    void on_btn_auto_pressed();
-*/
-
 private:
     Ui::QDupFindClass ui;
 };

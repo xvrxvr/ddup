@@ -39,12 +39,12 @@
            </property>
            <layout class="QVBoxLayout" name="verticalLayout">
             <item>
-             <widget class="QTreeWidget" name="dirs">
+             <widget class="XDirTree" name="dirs">
               <property name="editTriggers">
                <set>QAbstractItemView::NoEditTriggers</set>
               </property>
               <property name="showDropIndicator" stdset="0">
-               <bool>false</bool>
+               <bool>true</bool>
               </property>
               <property name="dragEnabled">
                <bool>true</bool>
@@ -82,7 +82,7 @@
            </property>
            <layout class="QVBoxLayout" name="verticalLayout_4">
             <item>
-             <widget class="QListWidget" name="prio">
+             <widget class="XPrioWidget" name="prio">
               <property name="editTriggers">
                <set>QAbstractItemView::NoEditTriggers</set>
               </property>
@@ -430,6 +430,18 @@
   </action>
  </widget>
  <layoutdefault spacing="6" margin="11"/>
+ <customwidgets>
+  <customwidget>
+   <class>XDirTree</class>
+   <extends>QTreeWidget</extends>
+   <header>xdirtree.h</header>
+  </customwidget>
+  <customwidget>
+   <class>XPrioWidget</class>
+   <extends>QListWidget</extends>
+   <header>xdirtree.h</header>
+  </customwidget>
+ </customwidgets>
  <resources>
   <include location="qdupfind.qrc"/>
  </resources>

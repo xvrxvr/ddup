@@ -103,6 +103,7 @@
     </QtMoc>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClInclude Include="xdirtree.h" />
     <QtRcc Include="qdupfind.qrc" />
     <QtUic Include="qdupfind.ui" />
     <QtMoc Include="qdupfind.h" />

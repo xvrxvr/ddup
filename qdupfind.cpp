@@ -9,6 +9,8 @@ QDupFind::QDupFind(QWidget *parent)
 {
     ui.setupUi(this);
 
+    ui.dirs->set_buddy(ui.prio);
+
     ui.errors_box->hide();
 //    ui.files_box->hide();
 
