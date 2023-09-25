@@ -38,6 +38,7 @@ QDupFind::~QDupFind()
 QIcon QDupFind::get_icon(FileNodeModes mode)
 {
     FileNodeModes normilized = FNM_None;
+    if (mode & FNM_KeepDup) normilized = FNM_KeepDup; else
     if (mode & FNM_Keep) normilized = FNM_Keep; else
     if (mode & FNM_Delete) normilized = FNM_Delete;
     if (mode & FNM_AddFileIcon) normilized |= FNM_AddFileIcon;
@@ -47,6 +48,7 @@ QIcon QDupFind::get_icon(FileNodeModes mode)
     if (icons.contains(normilized)) return icons[normilized];
 
     QIcon result;
+    if (normilized & FNM_KeepDup) result = QIcon(":/QDupFind/ok2"); else
     if (normilized & FNM_Keep) result = style()->standardIcon(QStyle::SP_DialogApplyButton); else
     if (normilized & FNM_Delete) result = style()->standardIcon(QStyle::SP_DialogCancelButton); else
     if (normilized & FNM_AddFileIcon) result = style()->standardIcon(QStyle::SP_FileIcon);
@@ -285,6 +287,24 @@ void QDupFind::on_actionInvert_triggered(bool)
     set_file_mode(file, file_mode);
 }
 
+void QDupFind::on_actionKeep_as_intended_duplicate_triggered(bool)
+{
+    QString file = get_current_file_name();
+    if (!file.isEmpty()) {set_file_mode(file, FNM_KeepDup); return;}
+    if (!ui.dirs->hasFocus()) return;
+    set_file_mode_rec(ui.dirs->currentItem(), FNM_KeepDup);
+}
+
+void QDupFind::set_file_mode_rec(QTreeWidgetItem* root, FileNodeModes mode)
+{
+    QString file = tree_item_to_path(root);
+    if (all_files.contains(file)) { set_file_mode(file, mode); return; }
+    for(int idx=0; idx<root->childCount(); ++idx)
+    {
+        set_file_mode_rec(root->child(idx), mode);
+    }
+}
+
 QString QDupFind::tree_item_to_path(QTreeWidgetItem* item)
 {
     QStringList acc;
@@ -300,6 +320,7 @@ QString QDupFind::tree_item_to_path(QTreeWidgetItem* item)
 void QDupFind::on_dirs_currentItemChanged(QTreeWidgetItem* current, QTreeWidgetItem*)
 {
     ui.files->clear();
+    if (!current || current->isHidden()) return;
     auto path = tree_item_to_path(current);
     auto org_ptr = all_files.find(path);
     if (org_ptr == all_files.end()) return;
@@ -371,50 +392,46 @@ void QDupFind::on_btn_auto_pressed()
         }
     }
 }
-
-void QDupFind::on_btn_apply_pressed()
-{
-    WaitCursor wc;
-    for (auto& ent : dups_visual)
-    {
-        int max_keep_priority = -1;
-        QMultiMap<int, QString> prio_list;
-
-        for (auto iter = ent.dirs.begin(); iter != ent.dirs.end(); ++iter)
-        {
-            if (iter->entry_mode & FNM_Hide) continue;
-            QString file_name = iter.key();
-            switch (iter->entry_mode)
-            {
-                case FNM_Keep: ent.set_file_mode(file_name, FNM_Hide); continue;
-                case FNM_Delete: break;
-                default: continue;
-            }
-            if (!do_delete(file_name)) continue;
-            ent.set_file_mode(file_name, FNM_Hide);
-            scanner->remove_file(file_name, dups_backrefs[file_name]);
-            remove_from_dir_tree(file_name.split("/", Qt::SkipEmptyParts), 0, dir_tree_root);
-        }
-    }
-}
-
-// Hide TreeList entry and returns 'true' if no more items to show in parent
-bool QDupFind::remove_from_dir_tree(const QStringList& file_name, int index, DirTreeNode& root)
-{
-    if (!root.children.contains(file_name[index])) return false;
-    auto& ent = root.children[file_name[index]];
-    if (index + 1 < file_name.size())
-    {
-        if (!remove_from_dir_tree(file_name, index+1, ent)) return false;
-    }
-    ent.item->setHidden(true);
-    root.children.remove(file_name[index]);
-    return root.children.isEmpty();
-}
 */
 
 bool QDupFind::do_delete(QString fname)
 {
-    //!!! Add removing empty dirs !!!
-    return QDir().remove(fname);
+#if 0
+    if (!QDir().remove(fname)) return false;
+    for (;;)
+    {
+        auto dir = QFileInfo(fname).absoluteDir();
+        if (!dir.isEmpty()) break;
+        fname = dir.absolutePath();
+        if (!dir.rmdir("")) break;
+    }
+#else
+    add_error("Delete " + fname);
+#endif
+    return true;
+}
+
+void QDupFind::on_actionRun_triggered(bool)
+{
+    WaitCursor wc;
+    for (const auto& [file_name, ent] : all_files.asKeyValueRange())
+    {
+        if (ent.file_mode & FNM_Hide) continue;
+        if (ent.file_mode & FNM_Keep) hide_file(file_name); else
+        if ((ent.file_mode & FNM_Delete) && do_delete(file_name))
+        {
+            hide_file(file_name);
+            scanner->remove_file(file_name, ent.hash);
+        }
+    }
+    ui.files->clear();
+    on_dirs_currentItemChanged(ui.dirs->currentItem(), NULL);
+}
+
+void QDupFind::on_actionShow_processed_entries_triggered(bool show)
+{
+    if (show) show_dir_tree();
+    else hide_dir_tree();
+    ui.files->clear();
+    on_dirs_currentItemChanged(ui.dirs->currentItem(), NULL);
 }

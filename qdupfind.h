@@ -12,9 +12,8 @@ enum FileNodeMode {
 
     FNM_KeepManual      = 0x01,
     FNM_KeepAuto        = 0x02,
-    FNM_Keep            = 0x03,
-
     FNM_KeepDup         = 0x04,
+    FNM_Keep            = 0x07,
 
     FNM_DeleteManual    = 0x08,
     FNM_DeleteAuto      = 0x10,
@@ -60,6 +59,7 @@ class QDupFind : public QMainWindow
     QIcon get_icon(FileNodeModes mode);
 
     void set_file_mode(QString fname, FileNodeModes mode);
+    void set_file_mode_rec(QTreeWidgetItem* root, FileNodeModes);
     void hide_file(QString fname);
     void hide_dir_item(QTreeWidgetItem*);
     void hide_dir_tree();
@@ -94,28 +94,21 @@ public slots:
 
     void on_actionScan_for_Empty_dirs_triggered(bool) {}
     void on_actionAuto_by_Dirs_triggered(bool) {}
-    void on_actionRun_triggered(bool) {}
+    void on_actionRun_triggered(bool);
     void on_actionPause_triggered(bool checked) {scanner->suspend_resume(ui.actionPause, checked);}
+    void on_actionShow_processed_entries_triggered(bool);
 
     void on_actionKeep_me_triggered(bool);
     void on_actionKeep_other_triggered(bool);
     void on_actionKeep_triggered(bool) { set_current_file_mode(FNM_Keep); }
+    void on_actionKeep_as_intended_duplicate_triggered(bool);
     void on_actionRemove_triggered(bool) { set_current_file_mode(FNM_Delete); }
     void on_actionInvert_triggered(bool);
 
 
 
 /*
-    void on_btn_keep_me_pressed()
-    {
-        set_file_mode([](int mode) {return FNM_Keep; });
-        set_file_mode_all(FNM_Delete);
-        move_to_next_file();
-    }
-    void on_btn_invert_pressed() { set_file_mode([](int mode) {return (mode + 1) % 3; }); }
-
     void on_btn_auto_pressed();
-    void on_btn_apply_pressed();
 */
 
 private:
