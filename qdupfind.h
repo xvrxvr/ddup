@@ -7,46 +7,60 @@
 
 #include "scan_thread.h"
 
-struct DirTreeNode {
-    QMap<QString, DirTreeNode> children;
-    int priority = -1;
-    QTreeWidgetItem* item = NULL;
-
-    QString get_visual_name(int parent_priority, QString raw_name);
-    void update_visual_widget(int parent_priority);
-};
-
 enum FileNodeMode {
-    FNM_Keep = 1,
-    FNM_Delete = 2,
-    FNM_Hide = 4
+    FNM_None = 0,
+
+    FNM_KeepManual      = 0x01,
+    FNM_KeepAuto        = 0x02,
+    FNM_Keep            = 0x03,
+
+    FNM_KeepDup         = 0x04,
+
+    FNM_DeleteManual    = 0x08,
+    FNM_DeleteAuto      = 0x10,
+    FNM_Delete          = 0x18,
+
+    FNM_Hide            = 0x20,
+
+    FNM_AddFileIcon     = 0x8000    // Used internally by get_icon member, not used in FileInfo::file_mode
+};
+Q_DECLARE_FLAGS(FileNodeModes, FileNodeMode)
+Q_DECLARE_OPERATORS_FOR_FLAGS(FileNodeModes)
+
+
+// Information about one File
+struct FileInfo {
+    QByteArray hash;
+    FileNodeModes file_mode{ FNM_None };
+    QTreeWidgetItem* item = NULL; // File entry in DirTree
 };
 
-struct FileNode {
+using FilesMap = QMap<QString, FileInfo>; // <full file name> -> <file-info>
+using FilePtr = FilesMap::iterator; // Pointer to FilesMap
+
+class PrioDirTree {
+    static constexpr const int NoPrio = std::numeric_limits<int>::max();
+
     struct DirNode {
-        QTreeWidgetItem* item = NULL;
-        int entry_mode = 0; // bitset of FileNodeMode
+        int priority = NoPrio;
+        QMap<QString, DirNode> children;
     };
-    
-    QString file_name; // Keeps common file name or all file names delimitered by '|'
-    QTreeWidgetItem* item = NULL;
-    QMap<QString, DirNode> dirs; // <full-file-name> -> <DirNode>
+    DirNode root;
 
-    void add_dir_node(QString file_name, QTreeWidget*);
+    void add_dir(DirNode& root, const QStringList& path, int index, int priority);
+    int get_dir(DirNode& root, const QStringList& path, int index, int parent_priority);
 
-    void set_file_mode(QString fname, FileNodeMode mode);
+public:
+    void add_dir(QString path, int priority) {add_dir(root, path.split("/", Qt::SkipEmptyParts), 0, priority); }
+    int get_dir(QString path) {return get_dir(root, path.split("/", Qt::SkipEmptyParts), 0, 0); }
 
-private:
-    bool mixed_file_names = false; // Set to 'true' if file names in 'dirs' differs
-    void to_mixed_file_name();
-    void update_file_name_in_widget();
-    enum FilledContents {
-        FC_None,
-        FC_Some,
-        FC_All
-    };
-    FilledContents check_filled() const;
+    bool empty() const {return root.children.isEmpty(); }
+
+    // Just put them here. This class do not use it, but outside code use as temporary storage
+    int total_hashes = 0;
+    int total_files = 0;
 };
+
 
 class QDupFind : public QMainWindow
 {
@@ -55,38 +69,60 @@ class QDupFind : public QMainWindow
     ScanThread* scanner;
     QProgressBar* progress_bar;
 
-    DirTreeNode dir_tree_root;
+    FilesMap all_files; // <file name> -> <file info>
+    QMultiHash<QByteArray, FilePtr> files_by_hash; // <hash> -> <pointer to file in all_files>
+    using HashPtr = QMultiHash<QByteArray, FilePtr>::iterator;
 
-    QMap<QByteArray, QString> dups_hash_toc; // <hash> -> <initial visual string for file> (filename + ' ' + hash-in-hex)
-    QMap<QString, QByteArray> dups_backrefs; // <full-file-name> -> <hash>
-    QMap<QString, FileNode> dups_visual; // <initial visual string for file> -> <dup-file-record>. Real visual in Widget can be differ from initial
+    QHash<FileNodeModes, QIcon> icons;
 
-    QString cur_dir_selected; // Current directory selected in 'Dirs' TreeWidget (for pushing back Priority)
-    bool suppress_new_prio_value = false; // Do not update 'Priority' in SpinBox callback
+    QVector<int> classify(QByteArray hash, std::initializer_list<FileNodeModes> filter, QString ignore = {})
+    {
+        QVector<int> result(2 + filter.size());
+        auto range = files_by_hash.equal_range(hash);
+        for (auto iter = range.first; iter != range.second; ++iter)
+        {
+            ++result[0];
+            if (iter.value().key() == ignore) continue;
+            auto fm = iter.value()->file_mode;
+            if (!fm) {++result[1]; continue;}
+            int idx = 2;
+            for(auto tst: filter)
+            {
+                if (fm & tst) ++result[idx]; else
+                if (!(tst & FNM_Hide) && (fm & FNM_Hide)) break; // If we do not test for Hide but current item is Hiddeen - stop processing futher filter items
+                ++idx;
+            }
+        }
+        return result;
+    }
+
+
+    bool is_all_assigned(QByteArray hash) {return classify(hash, {})[1] == 0; }
 
     void add_error(QString);
     void sb_message(QString);
 
-    std::pair<DirTreeNode*, int> add_dir(QStringList path, int trim = 0, bool set_icons=true);
-    std::pair<DirTreeNode*, int> add_dir(QString path) {return add_dir(path.split("/", Qt::SkipEmptyParts));}
+    QTreeWidgetItem* add_dir(QString path);
 
-    QString tree_item_to_path(QTreeWidgetItem* item);
+    static QString tree_item_to_path(QTreeWidgetItem* item) {return XDirTree::tree_item_to_path(item);}
 
-    FileNode* path_to_fnode(QString fname);
+    QIcon get_icon(FileNodeModes mode);
 
-    void set_file_mode(QString fname, FileNodeMode mode)
-    {
-        if (auto p = path_to_fnode(fname)) p->set_file_mode(fname, mode);
-    }
+    void set_file_mode(QString fname, FileNodeModes mode);
+    void set_file_mode_rec(QTreeWidgetItem* root, FileNodeModes);
+    void hide_file(QString fname);
+    void hide_dir_item(QTreeWidgetItem*);
+    void hide_dir_tree();
+    void show_dir_tree();
 
-    void set_file_mode(std::function<int(int)> mode_functor);
-    void set_file_mode_all(FileNodeMode new_mode);
-    void move_to_next_file();
+    void set_file_mode_all(QByteArray hash, FileNodeModes new_mode);
+
+    QString get_current_file_name();
+    void set_current_file_mode(FileNodeModes new_mode);
 
     bool do_delete(QString);
 
-    // Hide TreeList entry and returns 'true' if no more items to show in parent
-    bool remove_from_dir_tree(const QStringList& file_name, int index, DirTreeNode& root);
+    void process_prio_range(PrioDirTree&, HashPtr begin, HashPtr end);
 
 public:
     QDupFind(QWidget *parent = nullptr);
@@ -100,26 +136,22 @@ public slots:
     void scan_error(QString msg) {add_error("Dir Scanner ERROR: " + msg); }
 
     void on_actionAdd_directory_triggered(bool);
-    void on_pause_cb_stateChanged(int state) { scanner->suspend_resume(ui.pause_cb, state);}
-
-    void on_dirs_itemDoubleClicked(QTreeWidgetItem* item, int column);
-    void on_files_itemDoubleClicked(QTreeWidgetItem* item, int column);
 
     void on_dirs_currentItemChanged(QTreeWidgetItem* current, QTreeWidgetItem* previous);
-    void on_priority_spin_valueChanged(int i);
+    void on_files_currentItemChanged(QListWidgetItem* current, QListWidgetItem* previous);
 
-    void on_btn_keep_me_pressed()
-    {
-        set_file_mode([](int mode) {return FNM_Keep; });
-        set_file_mode_all(FNM_Delete);
-        move_to_next_file();
-    }
-    void on_btn_keep_pressed() { set_file_mode([](int mode) {return FNM_Keep; }); }
-    void on_btn_remove_pressed() {set_file_mode([](int mode) {return FNM_Delete; });}
-    void on_btn_invert_pressed() { set_file_mode([](int mode) {return (mode + 1) % 3; }); }
+    void on_actionScan_for_Empty_dirs_triggered(bool) {}
+    void on_actionAuto_by_Dirs_triggered(bool);
+    void on_actionRun_triggered(bool);
+    void on_actionPause_triggered(bool checked) {scanner->suspend_resume(ui.actionPause, checked);}
+    void on_actionShow_processed_entries_triggered(bool);
 
-    void on_btn_auto_pressed();
-    void on_btn_apply_pressed();
+    void on_actionKeep_me_triggered(bool);
+    void on_actionKeep_other_triggered(bool);
+    void on_actionKeep_triggered(bool) { set_current_file_mode(FNM_Keep); }
+    void on_actionKeep_as_intended_duplicate_triggered(bool);
+    void on_actionRemove_triggered(bool) { set_current_file_mode(FNM_Delete); }
+    void on_actionInvert_triggered(bool);
 
 private:
     Ui::QDupFindClass ui;

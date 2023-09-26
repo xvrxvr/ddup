@@ -7,8 +7,7 @@
 #include <QAtomicInteger>
 #include <QFutureWatcher>
 #include <QFuture>
-
-#include <deque>
+#include <QVector>
 
 // Size for initial Scan of file
 static constexpr size_t START_SCAN_SIZE = 4*1024;
@@ -40,8 +39,8 @@ class ScanThread : public QThread {
         QMutex queue_mutex;
         QSemaphore queue_counter;
         QSet<QString> dirs;
-        std::deque<QString> dirs_to_proceed;
-        std::deque<Cmd> oob_commands;
+        QVector<QString> dirs_to_proceed;
+        QVector<Cmd> oob_commands;
     public:
         void push(QString d) {push(Cmd{CC_Dir, d}); }
         void push(const Cmd& cmd)
@@ -72,8 +71,8 @@ class ScanThread : public QThread {
                     return result;
                 }
                 if (dirs_to_proceed.empty()) continue;
-                QString result = dirs_to_proceed.front();
-                dirs_to_proceed.pop_front();
+                QString result = dirs_to_proceed.back();
+                dirs_to_proceed.pop_back();
                 return Cmd{CC_Dir, result};
             }
         }
@@ -104,7 +103,7 @@ class ScanThread : public QThread {
 
     // Handle bg 'suspend' request
     QFutureWatcher<void> suspend_watcher;
-    QCheckBox* suspend_cb = NULL;
+    QAction* suspend_action = NULL;
 
     virtual void run() override
     {
@@ -141,7 +140,7 @@ class ScanThread : public QThread {
 public:
     ScanThread(QObject* parent) : QThread(parent) 
     {
-        QObject::connect(&suspend_watcher, &QFutureWatcher<void>::finished, this, [this]() {suspend_cb->setDisabled(false);});
+        QObject::connect(&suspend_watcher, &QFutureWatcher<void>::finished, this, [this]() {suspend_action->setDisabled(false);});
     }
 
     void scan_dir(QString d) 
@@ -155,7 +154,7 @@ public:
     void reset_reported() {queue.push(Cmd{CC_ResetReported});}
     void remove_file(QString file, QByteArray hash) {queue.push(Cmd{ CC_RemoveFile, file, hash});}
 
-    void suspend_resume(QCheckBox*, int state);
+    void suspend_resume(QAction*, bool checked);
 
 signals:
     void new_dup(QString fname, QByteArray hash);
