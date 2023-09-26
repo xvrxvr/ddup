@@ -83,7 +83,9 @@ class ScanThread : public QThread {
         }
     } queue;
     QMutex suspend_mutex;
+    QMutex empty_dirs_mutex;
     bool expect_suspend = false;
+    QVector<QStringList> empty_dirs;
 
     QMap<QByteArray, QSet<QString>> short_files_store;
     struct DupFilesEntry {
@@ -155,6 +157,8 @@ public:
     void remove_file(QString file, QByteArray hash) {queue.push(Cmd{ CC_RemoveFile, file, hash});}
 
     void suspend_resume(QAction*, bool checked);
+
+    QStringList get_empty_dirs();
 
 signals:
     void new_dup(QString fname, QByteArray hash);

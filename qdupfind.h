@@ -140,7 +140,7 @@ public slots:
     void on_dirs_currentItemChanged(QTreeWidgetItem* current, QTreeWidgetItem* previous);
     void on_files_currentItemChanged(QListWidgetItem* current, QListWidgetItem* previous);
 
-    void on_actionScan_for_Empty_dirs_triggered(bool) {}
+    void on_actionScan_for_Empty_dirs_triggered(bool);
     void on_actionAuto_by_Dirs_triggered(bool);
     void on_actionRun_triggered(bool);
     void on_actionPause_triggered(bool checked) {scanner->suspend_resume(ui.actionPause, checked);}

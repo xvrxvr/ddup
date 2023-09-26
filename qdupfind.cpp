@@ -3,6 +3,7 @@
 #include <QFileDialog>
 
 #include "qdupfind.h"
+#include "empty_dirs.h"
 
 // Define to fake Delete cycle (tool will be just print 'deleted ...' message in Eror pane
 #define DEL_DRYRUN 0
@@ -505,5 +506,19 @@ void QDupFind::process_prio_range(PrioDirTree& prio_tree, HashPtr begin, HashPtr
 #endif
         }
         ++prio_tree.total_files;
+    }
+}
+
+void QDupFind::on_actionScan_for_Empty_dirs_triggered(bool)
+{
+    EmptyDirsDialog dlg;
+
+    dlg.fill(scanner);
+
+    if (dlg.exec() == QDialog::Accepted)
+    {
+        sb_message("Removing files ...");
+        dlg.do_remove(progress_bar);
+        sb_message("");
     }
 }

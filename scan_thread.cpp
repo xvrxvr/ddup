@@ -9,17 +9,25 @@ void ScanThread::do_scan_dir(QString dir)
 {
     emit new_dir(dir);
 
+    QStringList empty_dir_template(QFileInfo(dir).absoluteFilePath());
+    bool is_empty = true;
+
     for (const auto& ent : QDir(dir).entryInfoList())
     {
         if (ent.isSymLink()) continue;
-        if (ent.isFile()) try_file_short(ent.absoluteFilePath()); else
-        if (ent.isDir() && ent.fileName() != "." && ent.fileName() != "..") queue.push(ent.absoluteFilePath());
+        if (ent.isFile()) {try_file_short(ent.absoluteFilePath()); is_empty = false;} else
+        if (ent.isDir() && ent.fileName() != "." && ent.fileName() != "..") {queue.push(ent.absoluteFilePath()); empty_dir_template << ent.fileName();}
         else continue;
 
         auto s = queue.stat();
         counters.total_dirs = s.first;
         counters.dirs_to_proceed = s.second;
         emit stat_update(counters);
+    }
+    if (is_empty)
+    {
+        QMutexLocker<QMutex> l(&empty_dirs_mutex);
+        empty_dirs << empty_dir_template;
     }
 }
 
@@ -133,4 +141,44 @@ void ScanThread::suspend_resume(QAction* action, bool checked)
         expect_suspend = false; 
         suspend_mutex.unlock();
     }
+}
+
+QStringList ScanThread::get_empty_dirs()
+{
+    struct EmptyDirProto {
+        bool me_empty = true;
+        bool parent_empty = false;
+    };
+    QMap<QString, EmptyDirProto> accumulated_empty_dirs;
+    {
+        QMutexLocker<QMutex> l(&empty_dirs_mutex);
+        for (size_t idx = empty_dirs.size(); idx--;)
+        {
+            const auto& ent = empty_dirs[idx];
+            EmptyDirProto data;
+            for (size_t i = 1; i < ent.size(); ++i)
+            {
+                QString path = ent[0] + "/" + ent[i];
+                if (!accumulated_empty_dirs.contains(path) || !accumulated_empty_dirs[path].me_empty)
+                {
+                    data.me_empty = false;
+                    break;
+                }
+            }
+            accumulated_empty_dirs[ent[0]] = data;
+            if (data.me_empty)
+            {
+                for (size_t i = 0; i < ent.size(); ++i)
+                {
+                    accumulated_empty_dirs[ent[0] + "/" + ent[i]].parent_empty = true;
+                }
+            }
+        }
+    }
+    QStringList result;
+    for (const auto& [fname, data] : accumulated_empty_dirs.asKeyValueRange())
+    {
+        if (data.me_empty && !data.parent_empty) result << fname;
+    }
+    return result;
 }
