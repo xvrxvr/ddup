@@ -12,8 +12,9 @@ enum FileNodeMode {
 
     FNM_KeepManual      = 0x01,
     FNM_KeepAuto        = 0x02,
+    FNM_Keep            = 0x03,
+
     FNM_KeepDup         = 0x04,
-    FNM_Keep            = 0x07,
 
     FNM_DeleteManual    = 0x08,
     FNM_DeleteAuto      = 0x10,
@@ -37,6 +38,30 @@ struct FileInfo {
 using FilesMap = QMap<QString, FileInfo>; // <full file name> -> <file-info>
 using FilePtr = FilesMap::iterator; // Pointer to FilesMap
 
+class PrioDirTree {
+    static constexpr const int NoPrio = std::numeric_limits<int>::max();
+
+    struct DirNode {
+        int priority = NoPrio;
+        QMap<QString, DirNode> children;
+    };
+    DirNode root;
+
+    void add_dir(DirNode& root, const QStringList& path, int index, int priority);
+    int get_dir(DirNode& root, const QStringList& path, int index, int parent_priority);
+
+public:
+    void add_dir(QString path, int priority) {add_dir(root, path.split("/", Qt::SkipEmptyParts), 0, priority); }
+    int get_dir(QString path) {return get_dir(root, path.split("/", Qt::SkipEmptyParts), 0, 0); }
+
+    bool empty() const {return root.children.isEmpty(); }
+
+    // Just put them here. This class do not use it, but outside code use as temporary storage
+    int total_hashes = 0;
+    int total_files = 0;
+};
+
+
 class QDupFind : public QMainWindow
 {
     Q_OBJECT
@@ -46,8 +71,33 @@ class QDupFind : public QMainWindow
 
     FilesMap all_files; // <file name> -> <file info>
     QMultiHash<QByteArray, FilePtr> files_by_hash; // <hash> -> <pointer to file in all_files>
+    using HashPtr = QMultiHash<QByteArray, FilePtr>::iterator;
 
     QHash<FileNodeModes, QIcon> icons;
+
+    QVector<int> classify(QByteArray hash, std::initializer_list<FileNodeModes> filter, QString ignore = {})
+    {
+        QVector<int> result(2 + filter.size());
+        auto range = files_by_hash.equal_range(hash);
+        for (auto iter = range.first; iter != range.second; ++iter)
+        {
+            ++result[0];
+            if (iter.value().key() == ignore) continue;
+            auto fm = iter.value()->file_mode;
+            if (!fm) {++result[1]; continue;}
+            int idx = 2;
+            for(auto tst: filter)
+            {
+                if (fm & tst) ++result[idx]; else
+                if (!(tst & FNM_Hide) && (fm & FNM_Hide)) break; // If we do not test for Hide but current item is Hiddeen - stop processing futher filter items
+                ++idx;
+            }
+        }
+        return result;
+    }
+
+
+    bool is_all_assigned(QByteArray hash) {return classify(hash, {})[1] == 0; }
 
     void add_error(QString);
     void sb_message(QString);
@@ -72,6 +122,8 @@ class QDupFind : public QMainWindow
 
     bool do_delete(QString);
 
+    void process_prio_range(PrioDirTree&, HashPtr begin, HashPtr end);
+
 public:
     QDupFind(QWidget *parent = nullptr);
     ~QDupFind();
@@ -89,7 +141,7 @@ public slots:
     void on_files_currentItemChanged(QListWidgetItem* current, QListWidgetItem* previous);
 
     void on_actionScan_for_Empty_dirs_triggered(bool) {}
-    void on_actionAuto_by_Dirs_triggered(bool) {}
+    void on_actionAuto_by_Dirs_triggered(bool);
     void on_actionRun_triggered(bool);
     void on_actionPause_triggered(bool checked) {scanner->suspend_resume(ui.actionPause, checked);}
     void on_actionShow_processed_entries_triggered(bool);

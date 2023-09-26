@@ -213,6 +213,8 @@
      <bool>true</bool>
     </property>
     <addaction name="actionShow_processed_entries"/>
+    <addaction name="actionAuto_complete"/>
+    <addaction name="actionEnable_full_delete"/>
    </widget>
    <addaction name="menuFile"/>
    <addaction name="menuActions"/>
@@ -426,6 +428,31 @@
    </property>
    <property name="toolTip">
     <string>Select files by file mask and apply action to all of them</string>
+   </property>
+  </action>
+  <action name="actionAuto_complete">
+   <property name="checkable">
+    <bool>true</bool>
+   </property>
+   <property name="checked">
+    <bool>true</bool>
+   </property>
+   <property name="text">
+    <string>Auto complete</string>
+   </property>
+   <property name="toolTip">
+    <string>Enable automatic selection of item as Keep if all other posibilities are filled</string>
+   </property>
+  </action>
+  <action name="actionEnable_full_delete">
+   <property name="checkable">
+    <bool>true</bool>
+   </property>
+   <property name="text">
+    <string>Enable full delete</string>
+   </property>
+   <property name="toolTip">
+    <string>Enable Deletion af all alternatives</string>
    </property>
   </action>
  </widget>

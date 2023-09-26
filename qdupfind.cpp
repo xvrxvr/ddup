@@ -4,6 +4,12 @@
 
 #include "qdupfind.h"
 
+// Define to fake Delete cycle (tool will be just print 'deleted ...' message in Eror pane
+#define DEL_DRYRUN 0
+
+// Define to add messages about delete/keep action during AutoDir pass
+#define AUT_VERBOSE 0
+
 QDupFind::QDupFind(QWidget *parent)
     : QMainWindow(parent)
 {
@@ -157,6 +163,13 @@ void QDupFind::set_file_mode(QString fname, FileNodeModes mode)
 
     if (ent.file_mode & FNM_Hide) return;
 
+    auto total = classify(ent.hash, {FNM_Delete | FNM_KeepDup}, fname);
+
+    if (mode & FNM_DeleteManual && !ui.actionEnable_full_delete->isChecked()) // Verify that we do not delete all alternatives
+    {
+        if (total[2] + 1 == total[0]) return; // We delete all (Intended Dups not taken in account) - reject
+    }
+
     ent.file_mode = mode;
     ent.item->setIcon(0, get_icon(ent.file_mode | FNM_AddFileIcon));
 
@@ -167,6 +180,23 @@ void QDupFind::set_file_mode(QString fname, FileNodeModes mode)
         {
             wg->setIcon(get_icon(ent.file_mode));
             break;
+        }
+    }
+
+    if (ui.actionAuto_complete->isChecked() && mode & (FNM_DeleteManual | FNM_KeepManual | FNM_KeepDup))
+    {
+        auto total = classify(ent.hash, {FNM_Delete | FNM_KeepDup});
+        if (total[1] == 1 && total[2] + 1 == total[0]) // We delete (or make intended Dup) all but 1 unassigned entry - make it Keep
+        {
+            auto range = files_by_hash.equal_range(ent.hash);
+            for (auto iter = range.first; iter != range.second; ++iter)
+            {
+                if (!iter.value()->file_mode)
+                {
+                    set_file_mode(iter.value().key(), FNM_KeepManual);
+                    break;
+                }
+            }
         }
     }
 }
@@ -309,6 +339,9 @@ void QDupFind::set_file_mode_rec(QTreeWidgetItem* root, FileNodeModes mode)
 
 void QDupFind::on_dirs_currentItemChanged(QTreeWidgetItem* current, QTreeWidgetItem*)
 {
+    QSignalBlocker b(ui.dirs);
+    QSignalBlocker b2(ui.files);
+
     ui.files->clear();
     if (!current || current->isHidden()) return;
     auto path = tree_item_to_path(current);
@@ -330,75 +363,23 @@ void QDupFind::on_dirs_currentItemChanged(QTreeWidgetItem* current, QTreeWidgetI
 
 void QDupFind::on_files_currentItemChanged(QListWidgetItem* current, QListWidgetItem* previous)
 {
+    QSignalBlocker b(ui.dirs);
+    QSignalBlocker b2(ui.files);
+
     if (!current) return;
     auto path = current->text();
     if (!all_files.contains(path)) return;
     ui.dirs->setCurrentItem(all_files[path].item);
 }
 
-
-/*
-void QDupFind::on_btn_auto_pressed()
-{
-    WaitCursor wc;
-    for (auto& ent : dups_visual)
-    {
-        int max_keep_priority = -1;
-        QMultiMap<int, QString> prio_list;
-
-        for (auto iter = ent.dirs.begin(); iter != ent.dirs.end(); ++iter)
-        {
-            if (iter->entry_mode & FNM_Keep) 
-            {
-                int prio = add_dir(iter.key()).second;
-                if (prio == -1) prio = 500;
-                max_keep_priority = std::max(max_keep_priority, prio);
-            }
-            if (iter->entry_mode) continue;
-            int prio = add_dir(iter.key()).second;
-            if (prio == -1) prio = 500;
-            prio_list.insert(prio, iter.key());
-        }
-
-        if (prio_list.isEmpty()) continue;
-        int active_prio = prio_list.lastKey();
-        int total_last_prio = prio_list.count(active_prio);
-
-        enum Action {
-            Keep = FNM_Keep,
-            Discard = FNM_Delete,
-            Terminate = 10,
-        } action;
-
-        if (max_keep_priority == active_prio) action = Discard; else // If we have at least one already 'Keep' file at maximum priority - use it and discard all other
-        if (total_last_prio == 1) action = Keep; // If we have exactly one file at maximum priority - keep it
-        else action = Terminate; // More than one - let's user decide (just stop processing)
-
-        for (const auto& e : prio_list.asKeyValueRange())
-        {
-            if (e.first < active_prio) ent.set_file_mode(e.second, FNM_Delete); else
-            if (action == Terminate) break;
-            else ent.set_file_mode(e.second, FileNodeMode(action));
-        }
-    }
-}
-*/
-
 bool QDupFind::do_delete(QString fname)
 {
-#if 0
-    if (!QDir().remove(fname)) return false;
-    for (;;)
-    {
-        auto dir = QFileInfo(fname).absoluteDir();
-        if (!dir.isEmpty()) break;
-        fname = dir.absolutePath();
-        if (!dir.rmdir("")) break;
-    }
-#else
+#if DEL_DRYRUN
     add_error("Delete " + fname);
-#endif
     return true;
+#else
+    return QDir().remove(fname) && QFileInfo(fname).absoluteDir().rmpath(".");
+#endif
 }
 
 void QDupFind::on_actionRun_triggered(bool)
@@ -407,8 +388,11 @@ void QDupFind::on_actionRun_triggered(bool)
     for (const auto& [file_name, ent] : all_files.asKeyValueRange())
     {
         if (ent.file_mode & FNM_Hide) continue;
-        if (ent.file_mode & FNM_Keep) hide_file(file_name); else
-        if ((ent.file_mode & FNM_Delete) && do_delete(file_name))
+        if (ent.file_mode & (FNM_Keep | FNM_KeepDup))
+        {
+            if (is_all_assigned(ent.hash)) hide_file(file_name); 
+        }
+        else if ((ent.file_mode & FNM_Delete) && do_delete(file_name))
         {
             hide_file(file_name);
             scanner->remove_file(file_name, ent.hash);
@@ -424,4 +408,102 @@ void QDupFind::on_actionShow_processed_entries_triggered(bool show)
     else hide_dir_tree();
     ui.files->clear();
     on_dirs_currentItemChanged(ui.dirs->currentItem(), NULL);
+}
+//////////////////////
+
+void PrioDirTree::add_dir(DirNode& root, const QStringList& path, int index, int priority)
+{
+    auto ptr = root.children.insert(path[index], {});
+    if (index + 1 < path.size()) add_dir(ptr.value(), path, index+1, priority);
+    else ptr->priority = priority;
+}
+
+int PrioDirTree::get_dir(DirNode& root, const QStringList& path, int index, int parent_priority)
+{
+    auto ptr = root.children.find(path[index]);
+    if (ptr == root.children.end()) return parent_priority;
+    if (ptr->priority != NoPrio) parent_priority = ptr->priority;
+    if (index + 1 >= path.size()) return parent_priority;
+    return get_dir(ptr.value(), path, index+1, parent_priority);
+}
+///////////////////////
+
+void QDupFind::on_actionAuto_by_Dirs_triggered(bool)
+{
+    WaitCursor wc;
+    PrioDirTree prio;
+
+    int cur_prio = ui.prio->count();
+    for (int i = 0; i < ui.prio->count(); ++i)
+    {
+        QString text = ui.prio->item(i)->text();
+        if (text == "<default>") {cur_prio = -1; continue;}
+        prio.add_dir(text, cur_prio--);
+    }
+    if (prio.empty() || files_by_hash.empty()) {sb_message("AutoDir: No priorities or files - nothing to process"); return;}
+
+    QByteArray cur_hash = files_by_hash.begin().key();
+    for (;;)
+    {
+        auto range = files_by_hash.equal_range(cur_hash);
+        if (range.first == range.second) break;
+        process_prio_range(prio, range.first, range.second);
+        if (range.second == files_by_hash.end()) break;
+        cur_hash = range.second.key();
+    }
+    sb_message(QString("AutoDir: Processed %1 file(s) in %2 bundles").arg(prio.total_files).arg(prio.total_hashes));
+}
+
+void QDupFind::process_prio_range(PrioDirTree& prio_tree, HashPtr begin, HashPtr end)
+{
+    int max_keep_priority = std::numeric_limits<int>::min();
+    QMultiMap<int, FilePtr> prio_list;
+
+    for (auto iter = begin; iter != end; ++iter)
+    {
+        const auto ptr = iter.value();
+        if (ptr->file_mode & FNM_KeepManual)
+        {
+            max_keep_priority = std::max(max_keep_priority, prio_tree.get_dir(iter.value().key()));
+        }
+        if (ptr->file_mode & (FNM_KeepManual|FNM_KeepDup|FNM_DeleteManual|FNM_Hide)) continue;
+        int prio = prio_tree.get_dir(iter.value().key());
+        prio_list.insert(prio, ptr);
+    }
+
+    if (prio_list.isEmpty()) return;
+    int active_prio = prio_list.lastKey();
+    int total_last_prio = prio_list.count(active_prio);
+
+    ++prio_tree.total_hashes;
+
+    enum Action {
+        Keep = FNM_KeepAuto,
+        Discard = FNM_DeleteAuto,
+        Terminate = 10000,
+    } action;
+
+    if (max_keep_priority == active_prio) action = Discard; else // If we have at least one already 'Keep' file at maximum priority - use it and discard all other
+    if (total_last_prio == 1) action = Keep; // If we have exactly one file at maximum priority - keep it
+    else action = Terminate; // More than one - let's user decide (just stop processing)
+
+    for (const auto& e : prio_list.asKeyValueRange())
+    {
+        if (e.first < active_prio) 
+        {
+            set_file_mode(e.second.key(), FNM_DeleteAuto); 
+#if AUT_VERBOSE
+            add_error(QString("File %1 deleted").arg(e.second.key()));
+#endif
+        }
+        else if (action == Terminate) break;
+        else 
+        {
+            set_file_mode(e.second.key(), FileNodeMode(action)); 
+#if AUT_VERBOSE
+            add_error(QString("File %1 %2").arg(e.second.key()).arg(action == Keep ? "saved" : "deleted"));
+#endif
+        }
+        ++prio_tree.total_files;
+    }
 }

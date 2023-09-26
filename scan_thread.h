@@ -7,8 +7,7 @@
 #include <QAtomicInteger>
 #include <QFutureWatcher>
 #include <QFuture>
-
-#include <deque>
+#include <QVector>
 
 // Size for initial Scan of file
 static constexpr size_t START_SCAN_SIZE = 4*1024;
@@ -40,8 +39,8 @@ class ScanThread : public QThread {
         QMutex queue_mutex;
         QSemaphore queue_counter;
         QSet<QString> dirs;
-        std::deque<QString> dirs_to_proceed;
-        std::deque<Cmd> oob_commands;
+        QVector<QString> dirs_to_proceed;
+        QVector<Cmd> oob_commands;
     public:
         void push(QString d) {push(Cmd{CC_Dir, d}); }
         void push(const Cmd& cmd)
@@ -72,8 +71,8 @@ class ScanThread : public QThread {
                     return result;
                 }
                 if (dirs_to_proceed.empty()) continue;
-                QString result = dirs_to_proceed.front();
-                dirs_to_proceed.pop_front();
+                QString result = dirs_to_proceed.back();
+                dirs_to_proceed.pop_back();
                 return Cmd{CC_Dir, result};
             }
         }
