@@ -47,12 +47,37 @@ class QDupFind : public QMainWindow
 
     ScanThread* scanner;
     QProgressBar* progress_bar;
+    QLabel* dir_queue_pending;
+    QLabel* time;
+
 
     FilesMap all_files; // <file name> -> <file info>
     QMultiHash<QByteArray, FilePtr> files_by_hash; // <hash> -> <pointer to file in all_files>
     using HashPtr = QMultiHash<QByteArray, FilePtr>::iterator;
 
     QHash<FileNodeModes, QIcon> icons;
+
+    QTime start_of_scan;
+
+    // We use dir_tree_cache to hold delayed update info for ui.dirs
+    // This structure will not used for navigation
+    struct DirTreeNode {
+        QTreeWidgetItem* item = NULL;
+        bool is_dir = true;
+        bool pending_insert = true;
+        bool follow_children = true;
+        QMap<QString, DirTreeNode> children;
+    };
+    DirTreeNode dir_tree_cache;
+    QTime dir_tree_last_update = QTime::currentTime();
+    size_t dir_tree_added_items = 0;
+
+    static const int DirTreeMaxItems = 1000; // How many items can be queied
+    static const int DirTreeMaxTimeout = 500; // How long (in ms) dir tree update can be held
+
+    QTreeWidgetItem* add_dir_node_to_cache(QString);
+    void dir_node_flush(bool force = false);
+    void dir_node_flush(DirTreeNode&, QTreeWidgetItem* root_item);
 
     QVector<int> classify(QByteArray hash, std::initializer_list<FileNodeModes> filter, QString ignore = {})
     {

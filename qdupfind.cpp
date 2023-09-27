@@ -6,7 +6,7 @@
 #include "empty_dirs.h"
 #include "find.h"
 
-// Define to fake Delete cycle (tool will be just print 'deleted ...' message in Eror pane
+// Define to fake Delete cycle (tool will be just print 'deleted ...' message in Error pane)
 #define DEL_DRYRUN 0
 
 // Define to add messages about delete/keep action during AutoDir pass
@@ -16,6 +16,8 @@ QDupFind::QDupFind(QWidget *parent)
     : QMainWindow(parent)
 {
     ui.setupUi(this);
+
+    connect(ui.actionPause, &QAction::enabledChanged, [this](bool enabled) {if (enabled) dir_node_flush(true);});
 
     ui.dirs->set_buddy(ui.prio);
 
@@ -36,6 +38,18 @@ QDupFind::QDupFind(QWidget *parent)
     progress_bar = new QProgressBar();
     progress_bar->hide();
     statusBar()->addPermanentWidget(progress_bar);
+
+    dir_queue_pending = new QLabel("   ");
+    dir_queue_pending->setFrameShape(QFrame::Panel);
+    dir_queue_pending->setFrameShadow(QFrame::Sunken);
+    dir_queue_pending->setLineWidth(3);
+    statusBar()->addPermanentWidget(dir_queue_pending);
+
+    time = new QLabel("       ");
+    time->setFrameShape(QFrame::Panel);
+    time->setFrameShadow(QFrame::Sunken);
+    time->setLineWidth(3);
+    statusBar()->addPermanentWidget(time);
 
     scanner->start();
 }
@@ -96,9 +110,20 @@ void QDupFind::sb_message(QString msg)
 
 void QDupFind::scan_stat_update(ScanState event)
 {
+    if (!start_of_scan.isValid()) start_of_scan = QTime::currentTime();
+
+    dir_node_flush(event.dirs_to_proceed <= 1);
+
     QString msg = QString("File dups: %1/%3").arg(event.total_dups).arg(event.total_files);
     if (event.total_false_dups) msg += QString(" | False dups: %1").arg(event.total_false_dups);
     msg += QString(" | Dirs: %1/%2").arg(event.total_dirs - event.dirs_to_proceed).arg(event.total_dirs);
+
+    dir_queue_pending->setText(QString("%1").arg(dir_tree_added_items, 3));
+
+    QTime diff = QTime(0,0,0).addSecs(start_of_scan.secsTo(QTime::currentTime()));
+
+    time->setText(diff.toString("h:mm:ss"));
+
     sb_message(msg);
 
     if (event.total_dirs || event.dirs_to_proceed)
@@ -115,6 +140,7 @@ void QDupFind::on_actionAdd_directory_triggered(bool)
     if (!dir.isEmpty()) scanner->scan_dir(dir);
 }
 
+/*
 static QTreeWidgetItem* find_in_children(QTreeWidgetItem* root, QString text)
 {
     for (int i = 0; i < root->childCount(); ++i)
@@ -124,9 +150,66 @@ static QTreeWidgetItem* find_in_children(QTreeWidgetItem* root, QString text)
     }
     return NULL;
 }
+*/
+
+QTreeWidgetItem* QDupFind::add_dir_node_to_cache(QString path)
+{
+    auto path_list = path.split("/", Qt::SkipEmptyParts);
+    DirTreeNode* root = &dir_tree_cache;
+    for (const auto& ent : path_list)
+    {
+        auto iter = root->children.find(ent);
+        if (iter == root->children.end()) iter = root->children.insert(ent, {});
+        iter->follow_children = true;
+        root = &iter.value();
+    }
+    if (!root->item)
+    {
+        root->item = new QTreeWidgetItem(QStringList(path_list.last()));
+        root->pending_insert = true;
+        ++dir_tree_added_items;
+    }
+    root->is_dir = false;
+    return root->item;
+}
+
+void QDupFind::dir_node_flush(bool force)
+{
+    if (!force && dir_tree_added_items < DirTreeMaxItems && dir_tree_last_update.msecsTo(QTime::currentTime()) < DirTreeMaxTimeout) return;
+    if (dir_tree_added_items)
+    {
+        dir_node_flush(dir_tree_cache, ui.dirs->invisibleRootItem());
+        dir_tree_added_items = 0;
+        dir_tree_last_update = QTime::currentTime();
+        dir_queue_pending->setText(" [Pending: 0]");
+    }
+}
+
+void QDupFind::dir_node_flush(DirTreeNode& root, QTreeWidgetItem* root_item)
+{
+    int idx = 0;
+    for (auto iter = root.children.begin(); iter != root.children.end(); ++iter)
+    {
+        auto name = iter.key();
+        auto& ent = iter.value();
+        if (ent.pending_insert)
+        {
+            if (!ent.item) ent.item = new QTreeWidgetItem(QStringList(name));
+            ent.item->setIcon(0, style()->standardIcon(ent.is_dir ? QStyle::SP_DirIcon : QStyle::SP_FileIcon));
+            root_item->insertChild(idx, ent.item);
+            ent.pending_insert = false;
+        }
+        if (ent.follow_children) {dir_node_flush(ent, ent.item); ent.follow_children = false;}
+        ++idx;
+    }
+}
 
 QTreeWidgetItem* QDupFind::add_dir(QString path)
 {
+    auto result = add_dir_node_to_cache(path);
+    dir_node_flush();
+    return result;
+/*
     QTreeWidgetItem* root = ui.dirs->invisibleRootItem();
     auto path_list = path.split("/", Qt::SkipEmptyParts);
     size_t idx = 0;
@@ -144,6 +227,7 @@ QTreeWidgetItem* QDupFind::add_dir(QString path)
         ++idx;
     }
     return root;
+*/
 }
 
 void QDupFind::scan_new_dup(QString fname, QByteArray hash)
@@ -160,6 +244,7 @@ void QDupFind::scan_new_dup(QString fname, QByteArray hash)
 
 void QDupFind::set_file_mode(QString fname, FileNodeModes mode)
 {
+    dir_node_flush(true);
     switch(mode)
     {
         case FNM_KeepMe: keep_me(fname); return;
@@ -210,6 +295,8 @@ void QDupFind::set_file_mode(QString fname, FileNodeModes mode)
 
 void QDupFind::hide_file(QString fname)
 {
+    dir_node_flush(true);
+
     assert(all_files.contains(fname));
     auto& ent = all_files[fname];
 
@@ -235,6 +322,8 @@ void QDupFind::hide_dir_item(QTreeWidgetItem* root)
 
 void QDupFind::hide_dir_tree()
 {
+    dir_node_flush(true);
+
     for(const auto& ent: all_files)
     {
         if (ent.file_mode & FNM_Hide) hide_dir_item(ent.item);
@@ -243,6 +332,8 @@ void QDupFind::hide_dir_tree()
 
 void QDupFind::show_dir_tree()
 {
+    dir_node_flush(true);
+
     for (const auto& ent : all_files)
     {
         if (ent.file_mode & FNM_Hide)
@@ -267,6 +358,8 @@ void QDupFind::set_file_mode_all(QByteArray hash, FileNodeModes new_mode)
 
 QString QDupFind::get_current_file_name()
 {
+    dir_node_flush(true);
+
     QString file;
     if (ui.dirs->hasFocus()) file = tree_item_to_path(ui.dirs->currentItem()); else
     if (ui.files->hasFocus()) 
@@ -347,6 +440,8 @@ void QDupFind::on_dirs_currentItemChanged(QTreeWidgetItem* current, QTreeWidgetI
     QSignalBlocker b(ui.dirs);
     QSignalBlocker b2(ui.files);
 
+    dir_node_flush(true);
+
     ui.files->clear();
     if (!current || current->isHidden()) return;
     auto path = tree_item_to_path(current);
@@ -372,6 +467,9 @@ void QDupFind::on_files_currentItemChanged(QListWidgetItem* current, QListWidget
     QSignalBlocker b2(ui.files);
 
     if (!current) return;
+
+    dir_node_flush(true);
+
     auto path = current->text();
     if (!all_files.contains(path)) return;
     ui.dirs->setCurrentItem(all_files[path].item);
@@ -381,15 +479,20 @@ bool QDupFind::do_delete(QString fname)
 {
 #if DEL_DRYRUN
     add_error("Delete " + fname);
-    return true;
 #else
-    return QDir().remove(fname) && QFileInfo(fname).absoluteDir().rmpath(".");
+    if (!QDir().remove(fname)) return false;
+    auto dir = QFileInfo(fname).absoluteDir();
+    if (dir.isEmpty()) return dir.rmpath(".");
 #endif
+    return true;
 }
 
 void QDupFind::on_actionRun_triggered(bool)
 {
     WaitCursor wc;
+
+    dir_node_flush(true);
+
     for (const auto& [file_name, ent] : all_files.asKeyValueRange())
     {
         if (ent.file_mode & FNM_Hide) continue;
@@ -409,6 +512,8 @@ void QDupFind::on_actionRun_triggered(bool)
 
 void QDupFind::on_actionShow_processed_entries_triggered(bool show)
 {
+    dir_node_flush(true);
+
     if (show) show_dir_tree();
     else hide_dir_tree();
     ui.files->clear();
@@ -515,6 +620,8 @@ void QDupFind::process_prio_range(PrioDirTree& prio_tree, HashPtr begin, HashPtr
 
 void QDupFind::on_actionScan_for_Empty_dirs_triggered(bool)
 {
+    dir_node_flush(true);
+
     EmptyDirsDialog dlg;
 
     dlg.fill(scanner);
@@ -529,6 +636,8 @@ void QDupFind::on_actionScan_for_Empty_dirs_triggered(bool)
 
 void QDupFind::on_actionProcess_by_mask_triggered(bool)
 {
+    dir_node_flush(true);
+
     FindDialog dlg(all_files.keys());
 
     dlg.set_aka_test([this](QString file_name, QString aka_name) {
