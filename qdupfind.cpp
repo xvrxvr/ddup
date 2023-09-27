@@ -4,6 +4,7 @@
 
 #include "qdupfind.h"
 #include "empty_dirs.h"
+#include "find.h"
 
 // Define to fake Delete cycle (tool will be just print 'deleted ...' message in Eror pane
 #define DEL_DRYRUN 0
@@ -159,6 +160,11 @@ void QDupFind::scan_new_dup(QString fname, QByteArray hash)
 
 void QDupFind::set_file_mode(QString fname, FileNodeModes mode)
 {
+    switch(mode)
+    {
+        case FNM_KeepMe: keep_me(fname); return;
+        case FNM_KeepOther: keep_other(fname); return;
+    }
     assert(all_files.contains(fname));
     auto& ent = all_files[fname];
 
@@ -280,17 +286,15 @@ void QDupFind::set_current_file_mode(FileNodeModes new_mode)
     if (!file.isEmpty()) set_file_mode(file, new_mode);
 }
 
-void QDupFind::on_actionKeep_me_triggered(bool)
+void QDupFind::keep_me(QString file)
 {
-    QString file = get_current_file_name();
     if (file.isEmpty()) return;
     set_file_mode(file, FNM_KeepManual);
     set_file_mode_all(all_files[file].hash, FNM_DeleteManual);
 }
 
-void QDupFind::on_actionKeep_other_triggered(bool)
+void QDupFind::keep_other(QString file)
 {
-    QString file = get_current_file_name();
     if (file.isEmpty()) return;
     set_file_mode(file, FNM_DeleteManual);
 
@@ -521,4 +525,24 @@ void QDupFind::on_actionScan_for_Empty_dirs_triggered(bool)
         dlg.do_remove(progress_bar);
         sb_message("");
     }
+}
+
+void QDupFind::on_actionProcess_by_mask_triggered(bool)
+{
+    FindDialog dlg(all_files.keys());
+
+    dlg.set_aka_test([this](QString file_name, QString aka_name) {
+        if (!all_files.contains(file_name) || !all_files.contains(aka_name)) return false;
+        return all_files[file_name].hash == all_files[aka_name].hash;
+    });
+
+    dlg.set_action_callback([this](QStringList files, FileNodeMode mode) {
+        for(auto f: files) set_file_mode(f, mode);
+    });
+
+    dlg.set_file_higlight_callback([this](QString path) {
+        if (all_files.contains(path)) ui.dirs->setCurrentItem(all_files[path].item);
+    });
+
+    dlg.exec();
 }

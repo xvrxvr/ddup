@@ -20,12 +20,7 @@ void EmptyDirsDialog::fill(ScanThread* sthread)
 
 void EmptyDirsDialog::do_remove(QProgressBar* pb)
 {
-    QStringList lst;
-    for (int idx = 0; idx < ui.dirs_list->count(); ++idx)
-    {
-        auto item = ui.dirs_list->item(idx);
-        if (item->checkState() == Qt::Checked) lst << item->text();
-    }
+    QStringList lst = get_list(ui.dirs_list);
     pb->setMaximum(lst.size());
     pb->setValue(0);
     int idx = 0;

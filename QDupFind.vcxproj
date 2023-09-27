@@ -104,12 +104,15 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <QtMoc Include="empty_dirs.h" />
+    <QtMoc Include="find.h" />
     <ClInclude Include="xdirtree.h" />
     <QtRcc Include="qdupfind.qrc" />
     <QtUic Include="empty_dirs.ui" />
+    <QtUic Include="find.ui" />
     <QtUic Include="qdupfind.ui" />
     <QtMoc Include="qdupfind.h" />
     <ClCompile Include="empty_dirs.cpp" />
+    <ClCompile Include="find.cpp" />
     <ClCompile Include="qdupfind.cpp" />
     <ClCompile Include="main.cpp" />
     <QtMoc Include="scan_thread.h" />

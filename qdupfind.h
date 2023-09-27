@@ -7,27 +7,6 @@
 
 #include "scan_thread.h"
 
-enum FileNodeMode {
-    FNM_None = 0,
-
-    FNM_KeepManual      = 0x01,
-    FNM_KeepAuto        = 0x02,
-    FNM_Keep            = 0x03,
-
-    FNM_KeepDup         = 0x04,
-
-    FNM_DeleteManual    = 0x08,
-    FNM_DeleteAuto      = 0x10,
-    FNM_Delete          = 0x18,
-
-    FNM_Hide            = 0x20,
-
-    FNM_AddFileIcon     = 0x8000    // Used internally by get_icon member, not used in FileInfo::file_mode
-};
-Q_DECLARE_FLAGS(FileNodeModes, FileNodeMode)
-Q_DECLARE_OPERATORS_FOR_FLAGS(FileNodeModes)
-
-
 // Information about one File
 struct FileInfo {
     QByteArray hash;
@@ -124,6 +103,10 @@ class QDupFind : public QMainWindow
 
     void process_prio_range(PrioDirTree&, HashPtr begin, HashPtr end);
 
+    void keep_me(QString file);
+    void keep_other(QString file);
+
+
 public:
     QDupFind(QWidget *parent = nullptr);
     ~QDupFind();
@@ -136,6 +119,7 @@ public slots:
     void scan_error(QString msg) {add_error("Dir Scanner ERROR: " + msg); }
 
     void on_actionAdd_directory_triggered(bool);
+    void on_actionProcess_by_mask_triggered(bool);
 
     void on_dirs_currentItemChanged(QTreeWidgetItem* current, QTreeWidgetItem* previous);
     void on_files_currentItemChanged(QListWidgetItem* current, QListWidgetItem* previous);
@@ -146,8 +130,8 @@ public slots:
     void on_actionPause_triggered(bool checked) {scanner->suspend_resume(ui.actionPause, checked);}
     void on_actionShow_processed_entries_triggered(bool);
 
-    void on_actionKeep_me_triggered(bool);
-    void on_actionKeep_other_triggered(bool);
+    void on_actionKeep_me_triggered(bool) { keep_me(get_current_file_name()); }
+    void on_actionKeep_other_triggered(bool) {keep_other(get_current_file_name()); }
     void on_actionKeep_triggered(bool) { set_current_file_mode(FNM_Keep); }
     void on_actionKeep_as_intended_duplicate_triggered(bool);
     void on_actionRemove_triggered(bool) { set_current_file_mode(FNM_Delete); }
