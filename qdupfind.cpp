@@ -188,6 +188,7 @@ void QDupFind::dir_node_flush(bool force)
 void QDupFind::dir_node_flush(DirTreeNode& root, QTreeWidgetItem* root_item)
 {
     int idx = 0;
+
     for (auto iter = root.children.begin(); iter != root.children.end(); ++iter)
     {
         auto name = iter.key();
@@ -198,8 +199,13 @@ void QDupFind::dir_node_flush(DirTreeNode& root, QTreeWidgetItem* root_item)
             ent.item->setIcon(0, style()->standardIcon(ent.is_dir ? QStyle::SP_DirIcon : QStyle::SP_FileIcon));
             root_item->insertChild(idx, ent.item);
             ent.pending_insert = false;
+        }        
+        if (ent.follow_children) 
+        {
+            ent.item->setHidden(false);
+            dir_node_flush(ent, ent.item); 
+            ent.follow_children = false;
         }
-        if (ent.follow_children) {dir_node_flush(ent, ent.item); ent.follow_children = false;}
         ++idx;
     }
 }
@@ -209,25 +215,6 @@ QTreeWidgetItem* QDupFind::add_dir(QString path)
     auto result = add_dir_node_to_cache(path);
     dir_node_flush();
     return result;
-/*
-    QTreeWidgetItem* root = ui.dirs->invisibleRootItem();
-    auto path_list = path.split("/", Qt::SkipEmptyParts);
-    size_t idx = 0;
-    for(const auto& ent: path_list)
-    {
-        QTreeWidgetItem* item = find_in_children(root, ent);
-        if (!item)
-        {
-            item = new QTreeWidgetItem(QStringList(ent));
-            if (idx + 1 != path_list.size()) item->setIcon(0, style()->standardIcon(QStyle::SP_DirIcon)); 
-            else item->setIcon(0, get_icon(all_files[path].file_mode | FNM_AddFileIcon));
-            root->insertChild(0, item);
-        }
-        root = item;
-        ++idx;
-    }
-    return root;
-*/
 }
 
 void QDupFind::scan_new_dup(QString fname, QByteArray hash)
