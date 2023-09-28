@@ -523,7 +523,8 @@ void QDupFind::on_actionShow_processed_entries_triggered(bool show)
 
 void PrioDirTree::add_dir(DirNode& root, const QStringList& path, int index, int priority)
 {
-    auto ptr = root.children.insert(path[index], {});
+    auto ptr = root.children.find(path[index]);
+    if (ptr == root.children.end()) ptr = root.children.insert(path[index], {});
     if (index + 1 < path.size()) add_dir(ptr.value(), path, index+1, priority);
     else ptr->priority = priority;
 }
